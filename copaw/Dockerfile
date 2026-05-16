@@ -101,6 +101,9 @@ RUN SITE=/opt/venv/copaw/lib/python3.11/site-packages \
     && cp -a /tmp/copaw-worker/src/copaw_worker/* "$SITE/copaw_worker/" \
     && rm -rf "$SITE/copaw/app/channels/matrix" \
     && cp -a /tmp/copaw-worker/src/matrix "$SITE/copaw/app/channels/" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/app/runner/session.py "$SITE/copaw/app/runner/session.py" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/app/runner/runner.py "$SITE/copaw/app/runner/runner.py" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/agents/memory/reme_light_memory_manager.py "$SITE/copaw/agents/memory/reme_light_memory_manager.py" \
     && if [ -f /tmp/copaw-worker/src/matrix/config.py ]; then \
          cp /tmp/copaw-worker/src/matrix/config.py "$SITE/copaw/config/config.py"; \
        fi \

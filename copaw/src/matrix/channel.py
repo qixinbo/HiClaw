@@ -213,6 +213,19 @@ def _normalize_user_id(uid: str) -> str:
     return uid
 
 
+def _normalize_human_id(uid: str) -> str:
+    """Canonicalize a Matrix sender ID for downstream human identity passthrough.
+
+    Unlike allowlist membership, keep the original MXID casing intact. The goal
+    here is to preserve the stable Matrix identity while trimming accidental
+    surrounding whitespace and normalizing the leading ``@`` marker.
+    """
+    uid = (uid or "").strip()
+    if uid and not uid.startswith("@"):
+        uid = "@" + uid
+    return uid
+
+
 class MatrixChannel(BaseChannel):
     """QwenPaw channel that connects to a Matrix homeserver via matrix-nio."""
 
@@ -1470,6 +1483,7 @@ class MatrixChannel(BaseChannel):
             return
 
         sender_id = event.sender
+        human_id = _normalize_human_id(sender_id)
         text = event.body or ""
 
         # Use Matrix API to reliably detect DM rooms
@@ -1567,6 +1581,7 @@ class MatrixChannel(BaseChannel):
         payload = {
             "channel_id": CHANNEL_KEY,
             "sender_id": sender_id,
+            "human_id": human_id,
             "content_parts": content_parts,
             "meta": {
                 "room_id": room_id,
@@ -1574,6 +1589,7 @@ class MatrixChannel(BaseChannel):
                 "worker_name": worker_name,
                 "event_id": event.event_id,
                 "sender_id": sender_id,
+                "human_id": human_id,
             },
         }
 
@@ -1596,6 +1612,7 @@ class MatrixChannel(BaseChannel):
             return
 
         sender_id = event.sender
+        human_id = _normalize_human_id(sender_id)
         room_id = room.room_id
         # Use Matrix API for reliable DM detection (room.users unreliable
         # after token restore)
@@ -1718,6 +1735,7 @@ class MatrixChannel(BaseChannel):
         payload = {
             "channel_id": CHANNEL_KEY,
             "sender_id": sender_id,
+            "human_id": human_id,
             "content_parts": content_parts,
             "meta": {
                 "room_id": room_id,
@@ -1725,6 +1743,7 @@ class MatrixChannel(BaseChannel):
                 "worker_name": worker_name,
                 "event_id": event.event_id,
                 "sender_id": sender_id,
+                "human_id": human_id,
             },
         }
 
@@ -1881,9 +1900,18 @@ class MatrixChannel(BaseChannel):
 
     def build_agent_request_from_native(self, native_payload: Any) -> Any:
         parts = native_payload.get("content_parts", [])
-        meta = native_payload.get("meta", {})
+        meta = dict(native_payload.get("meta", {}) or {})
         sender_id = native_payload.get("sender_id", "")
-        room_id = meta.get("room_id", sender_id)
+        human_id = _normalize_human_id(
+            meta.get("human_id")
+            or native_payload.get("human_id", "")
+            or sender_id
+        )
+        if human_id:
+            meta["human_id"] = human_id
+        if sender_id and "sender_id" not in meta:
+            meta["sender_id"] = sender_id
+        room_id = meta.get("room_id", sender_id or human_id)
         session_id = f"matrix:{room_id}"
 
         # content_parts are already ContentType objects (from both
@@ -1892,18 +1920,19 @@ class MatrixChannel(BaseChannel):
         if not content:
             content = [TextContent(type=ContentType.TEXT, text="")]
 
-        # Use room_id as the AgentRequest user_id so that all participants
-        # in the same room share one session (QwenPaw keys session state on
-        # both session_id AND user_id).  The real sender is preserved in
-        # meta["sender_id"] for reply mentions.
+        # Keep room_id in session_id/to_handle so replies still go back to the
+        # originating Matrix room, while propagating the stable human identity
+        # via sender_id/human_id for downstream session and memory isolation.
         req = self.build_agent_request_from_user_content(
             channel_id=CHANNEL_KEY,
-            sender_id=room_id,
+            sender_id=human_id or sender_id or room_id,
             session_id=session_id,
             content_parts=content,
             channel_meta=meta,
         )
         req.channel_meta = meta  # type: ignore[attr-defined]
+        if human_id:
+            req.human_id = human_id  # type: ignore[attr-defined]
         return req
 
     def resolve_session_id(self, sender_id: str, channel_meta=None) -> str:
@@ -2072,7 +2101,11 @@ class MatrixChannel(BaseChannel):
 
         meta_dict = meta or {}
         explicit_ids = meta_dict.get("mention_user_ids") or None
-        sender_id = meta_dict.get("sender_id") or meta_dict.get("user_id")
+        sender_id = (
+            meta_dict.get("human_id")
+            or meta_dict.get("sender_id")
+            or meta_dict.get("user_id")
+        )
         if explicit_ids or sender_id:
             self._apply_mention(
                 content,
@@ -2168,7 +2201,11 @@ class MatrixChannel(BaseChannel):
             }
             meta_dict = meta or {}
             explicit_ids = meta_dict.get("mention_user_ids") or None
-            sender_id = meta_dict.get("sender_id") or meta_dict.get("user_id")
+            sender_id = (
+                meta_dict.get("human_id")
+                or meta_dict.get("sender_id")
+                or meta_dict.get("user_id")
+            )
             if explicit_ids or sender_id:
                 self._apply_mention(
                     event_content,

@@ -11,6 +11,7 @@ debug-log/
 # IDE / Kiro workspace files
 .kiro/
 .idea/
+.trae/
 
 # Claude Code IDE
 .claude/

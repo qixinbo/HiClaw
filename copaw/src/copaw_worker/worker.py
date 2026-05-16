@@ -24,6 +24,7 @@ from rich.panel import Panel
 from copaw_worker.config import WorkerConfig
 from copaw_worker.sync import FileSync, sync_loop, push_loop
 from copaw_worker.bridge import bridge_openclaw_to_copaw
+from copaw_worker.user_paths import reconcile_existing_user_workspaces
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -159,6 +160,9 @@ class Worker:
         # 8. Sync skills from MinIO into CoPaw's active_skills dir
         self._sync_skills()
 
+        # Repair restored per-user workspaces after mirror_all/bootstrap.
+        self._restore_user_workspaces()
+
         # 9. Start background MinIO sync
         asyncio.create_task(
             sync_loop(
@@ -175,6 +179,18 @@ class Worker:
             f"[dim]Web console will start on port {self.config.console_port}[/dim]"
         )
         return True
+
+    def _restore_user_workspaces(self) -> None:
+        """Repair mirrored `users/` workspaces so restored sessions/memory remain usable."""
+        if self._copaw_working_dir is None:
+            return
+        workspace_dir = self._copaw_working_dir / "workspaces" / "default"
+        restored = reconcile_existing_user_workspaces(workspace_dir)
+        if restored:
+            logger.info(
+                "Restored %d per-user workspaces from mirrored state",
+                len(restored),
+            )
 
     # ------------------------------------------------------------------
     # CoPaw runner
@@ -521,6 +537,8 @@ class Worker:
                 workspace_dir = self._copaw_working_dir / "workspaces" / "default"
                 workspace_dir.mkdir(parents=True, exist_ok=True)
                 (workspace_dir / "AGENTS.md").write_text(agents)
+
+            self._restore_user_workspaces()
 
             bridge_openclaw_to_copaw(openclaw_cfg, self._copaw_working_dir)
             console.print("[green]Config re-bridged.[/green]")

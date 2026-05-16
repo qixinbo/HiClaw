@@ -113,6 +113,9 @@ RUN pip install --no-cache-dir \
 COPY copaw/src/ /tmp/copaw-worker/src/
 RUN SITE=/opt/copaw-venv/lib/python3.11/site-packages \
     && cp -a /tmp/copaw-worker/src/copaw_worker/* "$SITE/copaw_worker/" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/app/runner/session.py "$SITE/copaw/app/runner/session.py" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/app/runner/runner.py "$SITE/copaw/app/runner/runner.py" \
+    && cp /tmp/copaw-worker/src/copaw_runtime_overlay/agents/memory/reme_light_memory_manager.py "$SITE/copaw/agents/memory/reme_light_memory_manager.py" \
     && rm -rf /tmp/copaw-worker/
 
 # ---- Copy Manager agent definitions ----
